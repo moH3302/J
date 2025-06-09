@@ -1,0 +1,64 @@
+stages:
+  - setup
+  - test
+  - deploy
+
+variables:
+  PIP_CACHE_DIR: "${CI_PROJECT_DIR}/.cache/pip"
+  PYTHON_VERSION: "3.9"  # Can be changed to 3.10, 3.11, etc.
+
+cache:
+  paths:
+    - .cache/pip
+    - venv/
+
+# Shared configuration for all jobs
+.default_job: &default_job
+  image: python:${PYTHON_VERSION}-slim
+  before_script:
+    - python -V  # Verify Python version
+    - pip install --upgrade pip setuptools wheel
+    - if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+    - chmod +x raja  # Make your script executable
+    - ls -la  # Debug: List files (optional)
+
+setup:
+  stage: setup
+  <<: *default_job
+  script:
+    - python -m pip check
+    - python -c "import sys; print(sys.path)"
+  artifacts:
+    paths:
+      - venv/
+    expire_in: 1 hour
+
+test:
+  stage: test
+  <<: *default_job
+  script:
+    - python -m pytest tests/  # If you have tests
+    - python -c "import telebot; print('Telebot version:', telebot.__version__)"  # Verify imports
+
+deploy:
+  stage: deploy
+  <<: *default_job
+  script:
+    - python3 n.py --production  # Your main script execution
+  after_script:
+    - echo "Deployment completed at $(date)"
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'  # Only run on main branch
+      when: manual  # Change to 'always' for auto-deploy
+    - when: never
+
+# Scheduled job (runs daily at midnight)
+scheduled_run:
+  extends: .default_job
+  stage: deploy
+  script:
+    - python3 n.py --scheduled
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+  only:
+    - main
